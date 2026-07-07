@@ -1,0 +1,8 @@
+openapi: 3.0.3
+info:
+  title: 'SmartHire : Intelligent Recruitment Platform'
+  version: 1.0.0
+  description: A system that helps recruiter to find the best candidates from a large
+    volume of applications received
+paths: {}
+components: {}
