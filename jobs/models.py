@@ -35,3 +35,16 @@ class Job(models.Model):
 
     def __str__(self):
         return self.title
+    
+class JobEmbedding(models.Model):
+
+    embedding_id = models.UUIDField(primary_key=True,default=uuid.uuid4,editable=False)
+    job = models.OneToOneField(Job,on_delete=models.CASCADE,related_name="embedding")
+    skills_embedding = models.JSONField(default=list,blank=True)
+    experience_embedding = models.JSONField(default=list,blank=True)
+    education_embedding = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Embeddings - {self.job.title}"    

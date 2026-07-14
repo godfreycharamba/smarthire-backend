@@ -5,6 +5,11 @@ from common.views import BaseAPIView
 from profiles.models import EmployerProfile
 from .models import Job
 from .serializers import JobSerializer
+import threading
+
+from ai_matching.services.job_embedding_processor import (
+    process_job_embeddings
+)
 
 
 class JobCreateView(BaseAPIView, CreateAPIView):
@@ -35,6 +40,12 @@ class JobCreateView(BaseAPIView, CreateAPIView):
         job = serializer.save(
             employer_profile=employer_profile
         )
+
+        threading.Thread(
+                target=process_job_embeddings,
+                args=(job.job_id,),
+                daemon=True
+            ).start()
 
         return self.success_response(
             message="Job created successfully",
