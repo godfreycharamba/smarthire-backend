@@ -4,6 +4,13 @@ import uuid
 
 
 class JobSeekerProfile(models.Model):
+    PROCESSING_STATUS = (
+        ("pending","Pending"),
+        ("processing","Processing"),
+        ("completed","Completed"),
+        ("failed","Failed"),
+    )
+
     profile_id = models.UUIDField(primary_key=True,default=uuid.uuid4 , editable=False, unique=True)
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
     profile_pic_url = models.URLField(blank=True, null=True)
@@ -13,6 +20,7 @@ class JobSeekerProfile(models.Model):
     skills = models.JSONField(default=list, blank=True)
     experience = models.JSONField(default=list, blank=True)
     education = models.JSONField(default=list, blank=True)
+    processing_status = models.CharField(max_length=20,choices=PROCESSING_STATUS,default="pending")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -33,3 +41,16 @@ class EmployerProfile(models.Model):
 
     def __str__(self):
         return self.company_name
+    
+class ResumeEmbedding(models.Model):
+    embedding_id = models.UUIDField(primary_key=True,default=uuid.uuid4,editable=False)
+    profile = models.OneToOneField(JobSeekerProfile,on_delete=models.CASCADE,related_name="embedding")
+    skills_embedding = models.JSONField(default=list)
+    experience_embedding = models.JSONField(default=list)
+    education_embedding = models.JSONField(default=list)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Embeddings - {self.profile.user.email}"    

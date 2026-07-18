@@ -6,6 +6,9 @@ from common.views import BaseAPIView
 
 from jobs.models import Job
 from profiles.models import JobSeekerProfile
+from ai_matching.services.application_scoring import (
+    calculate_application_scores
+)
 
 
 class ApplicationCreateView(BaseAPIView, CreateAPIView):
@@ -32,27 +35,38 @@ class ApplicationCreateView(BaseAPIView, CreateAPIView):
             )
 
         job_id = request.data.get("job_id")
+        print(repr(job_id))
 
         try:
             job = Job.objects.get(job_id=job_id)
+
         except Job.DoesNotExist:
             return self.error_response(
                 message="Job not found",
                 status_code=404
             )
+        
+        if job.status != "active":
+            return self.error_response(
+                message="This job is not accepting applications",
+                status_code=400
+            )
 
-        if Application.objects.filter(
-            job=job,
-            applicant=profile
-        ).exists():
+        if Application.objects.filter(job=job,applicant=profile).exists():
             return self.error_response(
                 message="You have already applied for this job",
                 status_code=400
             )
+        
+        scores = calculate_application_scores(job=job,applicant=profile)
 
         application = Application.objects.create(
             job=job,
-            applicant=profile
+            applicant=profile,
+            skills_score=scores["skills_score"],
+            experience_score=scores["experience_score"],
+            education_score=scores["education_score"],
+            total_match_score=scores["total_match_score"]
         )
 
         return self.success_response(

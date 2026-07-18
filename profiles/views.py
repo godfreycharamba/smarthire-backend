@@ -1,15 +1,14 @@
 from rest_framework.generics import CreateAPIView , RetrieveAPIView , DestroyAPIView , UpdateAPIView
 from rest_framework.permissions import IsAuthenticated
-
-
+import tempfile
+import os
 from common.views import BaseAPIView
 from common.services.supabase import upload_file
-
+import threading
 from .models import EmployerProfile , JobSeekerProfile
 from .serializers import EmployerProfileSerializer , JobSeekerProfileSerializer
 from rest_framework.parsers import MultiPartParser, FormParser
-from ai_matching.services.resume_extractor import extract_resume_text
-from ai_matching.services.gemini_resume_parser import parse_resume
+from .services.resume_processing import process_resume
 
 
 class EmployerProfileCreateView(BaseAPIView, CreateAPIView):
@@ -103,9 +102,13 @@ class EmployerProfileDeleteView(BaseAPIView, DestroyAPIView):
         )  
 
 class JobSeekerProfileCreateView(BaseAPIView, CreateAPIView):
+
     serializer_class = JobSeekerProfileSerializer
+
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser , FormParser]
+
+    parser_classes = [MultiPartParser, FormParser]
+
 
     def create(self, request, *args, **kwargs):
 
@@ -115,7 +118,9 @@ class JobSeekerProfileCreateView(BaseAPIView, CreateAPIView):
                 status_code=400
             )
 
+
         serializer = self.get_serializer(data=request.data)
+
 
         if not serializer.is_valid():
             return self.error_response(
@@ -124,87 +129,96 @@ class JobSeekerProfileCreateView(BaseAPIView, CreateAPIView):
                 status_code=400
             )
 
+
         resume = request.FILES.get("resume")
 
-        resume_url = None
-        skills = []
-        education = []
-        experience = []
 
-        if resume:
-            try:
-                # Extract resume text
-                resume_text = extract_resume_text(resume)
-
-
-                #Send extracted text to Gemini
-                parsed_data = parse_resume(resume_text)
-
-
-                #Get structured data
-                skills = parsed_data.get("skills",[])
-
-                education = parsed_data.get("education",[])
-
-                experience = parsed_data.get("experience",[])
-
-                # Reset file pointer after reading
-                resume.seek(0)
-
-
-                # 4. Upload resume to Supabase
-                resume_url = upload_file(
-                    file=resume,
-                    folder="resumes"
-                )
-
-
-            except Exception as e:
-                return self.error_response(
-                    message=f"Resume processing failed: {str(e)}",
-                    status_code=400
-                )
-
+        # Save basic profile immediately
         profile = serializer.save(
             user=request.user,
-            resume_url=resume_url,
-            skills=skills,
-            education=education,
-            experience=experience
+            processing_status="pending"
         )
 
-       
+
+        if resume:
+            extension = os.path.splitext(resume.name)[1]
+
+            temp_file = tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=extension
+            )
+
+
+            for chunk in resume.chunks():
+                temp_file.write(chunk)
+
+
+            temp_file.close()
+
+
+            threading.Thread(
+                target=process_resume,
+                args=(
+                    profile.profile_id,
+                    temp_file.name
+                ),
+                daemon=True
+            ).start()
+
+
+
         return self.success_response(
-            message="Job seeker profile created successfully",
+            message="Profile created. Resume processing started.",
             data=self.get_serializer(profile).data,
             status_code=201
-        ) 
+        )
 
 class JobSeekerProfileMeView(BaseAPIView, RetrieveAPIView):
+
     serializer_class = JobSeekerProfileSerializer
     permission_classes = [IsAuthenticated]
 
+
     def get_object(self):
-        return JobSeekerProfile.objects.get(user=self.request.user)
+        return JobSeekerProfile.objects.get(
+            user=self.request.user
+        )
+
 
     def retrieve(self, request, *args, **kwargs):
-        profile = self.get_object()
 
-        return self.success_response(
-            message="Profile retrieved successfully",
-            data=self.get_serializer(profile).data
-        )
+        try:
+            profile = self.get_object()
+
+            return self.success_response(
+                message="Profile retrieved successfully",
+                data=self.get_serializer(profile).data
+            )
+
+        except JobSeekerProfile.DoesNotExist:
+
+            return self.success_response(
+                message="No profile found",
+                data=[]
+            )
     
 class JobSeekerProfileUpdateView(BaseAPIView, UpdateAPIView):
+
     serializer_class = JobSeekerProfileSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
+
     def get_object(self):
-        return JobSeekerProfile.objects.get(user=self.request.user)
+        return JobSeekerProfile.objects.get(
+            user=self.request.user
+        )
+
 
     def update(self, request, *args, **kwargs):
+
         profile = self.get_object()
+
 
         serializer = self.get_serializer(
             profile,
@@ -212,28 +226,52 @@ class JobSeekerProfileUpdateView(BaseAPIView, UpdateAPIView):
             partial=True
         )
 
+
         if not serializer.is_valid():
+
             return self.error_response(
                 message="Validation failed",
                 data=serializer.errors,
                 status_code=400
             )
 
+
         resume = request.FILES.get("resume")
 
-        resume_url = profile.resume_url 
+
+        # Update normal fields immediately
+        updated_profile = serializer.save()
+
 
         if resume:
-            resume_url = upload_file(
-                file=resume,
-                folder="resumes"
-            )
 
-        updated_profile = serializer.save(resume_url=resume_url)
+            updated_profile.processing_status = "pending"
+            updated_profile.save()
+
+
+            threading.Thread(
+                target=process_resume,
+                args=(
+                    updated_profile.profile_id,
+                    resume
+                ),
+                daemon=True
+            ).start()
+
+
 
         return self.success_response(
-            message="Profile updated successfully",
-            data=self.get_serializer(updated_profile).data,
+
+            message=(
+                "Profile updated. Resume processing started."
+                if resume
+                else "Profile updated successfully"
+            ),
+
+            data=self.get_serializer(
+                updated_profile
+            ).data,
+
             status_code=200
         )
 
@@ -298,4 +336,5 @@ class JobSeekerProfileDeleteView(BaseAPIView, DestroyAPIView):
 
         return self.success_response(
             message="Profile deleted successfully"
+            
         )                  

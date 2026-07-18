@@ -41,7 +41,8 @@ INSTALLED_APPS = [
     'profiles',
     'jobs',
     'applications',
-    'ai_matching'
+    'ai_matching',
+    'dashboard'
 ]
 
 MIDDLEWARE = [

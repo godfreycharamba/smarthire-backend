@@ -42,6 +42,7 @@ class JobSeekerProfileSerializer(serializers.ModelSerializer):
             "skills",
             "experience",
             "education",
+            "processing_status",
             "created_at",
             "updated_at",
         ]
